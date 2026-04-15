@@ -13,27 +13,19 @@ dist_sqr :: proc(c1: rl.Color, c2: rl.Color) -> f32 {
 	return dr * dr + dg * dg + db * db
 }
 
-main :: proc() {
-	img := rl.LoadImage("photo.jpg")
-	defer rl.UnloadImage(img)
-
-	rl.InitWindow(img.width, img.height, "K-Means Image Segmentation")
-	texture := rl.LoadTextureFromImage(img)
-
-	size := img.height * img.width
+segment_photo :: proc(img: rl.Image, size: i32) -> []rl.Color {
 	original_pixels := rl.LoadImageColors(img)
-	pixels := make([]rl.Color, size)
 	defer rl.UnloadImageColors(original_pixels)
+	pixels := make([]rl.Color, size)
 	defer delete(pixels)
 
 	for i in 0 ..< size {
 		pixels[i] = original_pixels[i]
 	}
-
 	seed := time.time_to_unix(time.now())
 	rand.reset(u64(seed))
 
-	K :: 3
+	K :: 5
 	centroids := [K]rl.Color{}
 	for i in 0 ..< K {
 		centroids[i] = pixels[rand.int31_max(size)]
@@ -75,24 +67,64 @@ main :: proc() {
 		}
 	}
 
-	// for i in 0 ..< size {
-	// 	rl.ImageDrawPixel(&img, i % img.width, i / img.width, pixels[i])
-	// }
-	//
-	// rl.UpdateTexture(texture, img.data)
+	return pixels
+}
 
-	last_index: i32 = 0
+main :: proc() {
+	WIDTH :: 800
+	HEIGHT :: 600
+	img: rl.Image
+	texture: rl.Texture2D
+	size := i32(HEIGHT * WIDTH)
+	imageLoaded := false
+	pixels: []rl.Color
+	// last_index: i32 = 0
+
+	rl.InitWindow(WIDTH, HEIGHT, "K-Means Image Segmentation")
+
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
-		if last_index < size {
-			for i in last_index ..< last_index + img.width {
+
+		if (rl.IsFileDropped()) {
+			droppedFiles: rl.FilePathList = rl.LoadDroppedFiles()
+			defer rl.UnloadDroppedFiles(droppedFiles)
+			img := rl.LoadImage(droppedFiles.paths[0])
+			defer rl.UnloadImage(img)
+			rl.ImageResize(&img, WIDTH, HEIGHT)
+			pixels = segment_photo(img, size)
+			for i in 0 ..< size {
 				rl.ImageDrawPixel(&img, i % img.width, i / img.width, pixels[i])
 			}
-			rl.UpdateTexture(texture, img.data)
+			texture = rl.LoadTextureFromImage(img)
+			imageLoaded = true
+		}
+
+		if (!imageLoaded) {
+			text: cstring = "Drag a photo here"
+			FONT_SIZE := 36
+			text_size := rl.MeasureTextEx(rl.GetFontDefault(), text, f32(FONT_SIZE), 1)
+			rl.DrawText(
+				text,
+				(WIDTH - i32(text_size.x)) / 2,
+				(HEIGHT - i32(text_size.y)) / 2,
+				i32(FONT_SIZE),
+				rl.RAYWHITE,
+			)
+		} else {
 			rl.DrawTexture(texture, 0, 0, rl.WHITE)
 		}
+
+		// rl.UpdateTexture(texture, img.data)
+
+		// if last_index < size {
+		// 	for i in last_index ..< last_index + img.width {
+		// 		rl.ImageDrawPixel(&img, i % img.width, i / img.width, pixels[i])
+		// 	}
+		// 	rl.UpdateTexture(texture, img.data)
+		// 	rl.DrawTexture(texture, 0, 0, rl.WHITE)
+		// last_index += img.width
+		// }
 		rl.EndDrawing()
-		last_index += img.width
 	}
 
 	rl.CloseWindow()
