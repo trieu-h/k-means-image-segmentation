@@ -1,6 +1,5 @@
 package program
 
-import "core:fmt"
 import "core:math"
 import "core:math/rand"
 import "core:time"
@@ -13,11 +12,10 @@ dist_sqr :: proc(c1: rl.Color, c2: rl.Color) -> f32 {
 	return dr * dr + dg * dg + db * db
 }
 
-segment_photo :: proc(img: rl.Image, size: i32) -> []rl.Color {
+segment_photo :: proc(img: rl.Image) -> []rl.Color {
 	original_pixels := rl.LoadImageColors(img)
 	defer rl.UnloadImageColors(original_pixels)
 	pixels := make([]rl.Color, size)
-	defer delete(pixels)
 
 	for i in 0 ..< size {
 		pixels[i] = original_pixels[i]
@@ -70,62 +68,95 @@ segment_photo :: proc(img: rl.Image, size: i32) -> []rl.Color {
 	return pixels
 }
 
-main :: proc() {
-	WIDTH :: 800
-	HEIGHT :: 600
-	img: rl.Image
-	texture: rl.Texture2D
-	size := i32(HEIGHT * WIDTH)
-	imageLoaded := false
-	pixels: []rl.Color
-	// last_index: i32 = 0
+scale_image :: proc(img: ^rl.Image) {
+	if (img.width <= MAX_WIDTH && img.height <= MAX_HEIGHT) {
+		x = (MAX_WIDTH - img.width) / 2
+		y = (MAX_HEIGHT - img.height) / 2
+		size = img.width * img.height
+	} else if (img.width > MAX_WIDTH && img.height <= MAX_HEIGHT) {
+		ratio := f32(img.height) / f32(img.width)
+		newHeight := i32(f32(MAX_WIDTH) * ratio)
+		rl.ImageResize(img, MAX_WIDTH, newHeight)
+		x = 0
+		y = (MAX_HEIGHT - newHeight) / 2
+		size = MAX_WIDTH * newHeight
+	} else if (img.height > MAX_HEIGHT && img.width <= MAX_WIDTH) {
+		ratio := f32(img.width) / f32(img.height)
+		newWidth := i32(f32(MAX_HEIGHT) * ratio)
+		rl.ImageResize(img, newWidth, MAX_HEIGHT)
+		x = (MAX_WIDTH - newWidth) / 2
+		y = 0
+		size = MAX_HEIGHT * newWidth
+	} else {
+		scaleW := f32(MAX_WIDTH) / f32(img.width)
+		scaleH := f32(MAX_HEIGHT) / f32(img.height)
+		scale := min(scaleW, scaleH)
+		newWidth := i32(f32(img.width) * scale)
+		newHeight := i32(f32(img.height) * scale)
+		rl.ImageResize(img, newWidth, newHeight)
+		x = (MAX_WIDTH - newWidth) / 2
+		y = (MAX_HEIGHT - newHeight) / 2
+		size = newWidth * newHeight
+	}
+}
 
-	rl.InitWindow(WIDTH, HEIGHT, "K-Means Image Segmentation")
+MAX_WIDTH: i32 = 1280
+MAX_HEIGHT: i32 = 720
+size := i32(MAX_WIDTH * MAX_HEIGHT)
+img: rl.Image
+texture: rl.Texture2D
+imageLoaded := false
+pixels: []rl.Color
+last_index: i32 = 0
+x: i32 = 0
+y: i32 = 0
+
+main :: proc() {
+	rl.InitWindow(MAX_WIDTH, MAX_HEIGHT, "K-Means Image Segmentation")
 
 	for !rl.WindowShouldClose() {
-		rl.BeginDrawing()
-
 		if (rl.IsFileDropped()) {
 			droppedFiles: rl.FilePathList = rl.LoadDroppedFiles()
-			defer rl.UnloadDroppedFiles(droppedFiles)
-			img := rl.LoadImage(droppedFiles.paths[0])
-			defer rl.UnloadImage(img)
-			rl.ImageResize(&img, WIDTH, HEIGHT)
-			pixels = segment_photo(img, size)
-			for i in 0 ..< size {
-				rl.ImageDrawPixel(&img, i % img.width, i / img.width, pixels[i])
-			}
+			img = rl.LoadImage(droppedFiles.paths[0])
+			rl.UnloadDroppedFiles(droppedFiles)
+			scale_image(&img)
 			texture = rl.LoadTextureFromImage(img)
+			pixels = segment_photo(img)
 			imageLoaded = true
 		}
 
-		if (!imageLoaded) {
+		rl.BeginDrawing()
+		rl.ClearBackground(rl.BLACK)
+
+		if !imageLoaded {
 			text: cstring = "Drag a photo here"
 			FONT_SIZE := 36
 			text_size := rl.MeasureTextEx(rl.GetFontDefault(), text, f32(FONT_SIZE), 1)
 			rl.DrawText(
 				text,
-				(WIDTH - i32(text_size.x)) / 2,
-				(HEIGHT - i32(text_size.y)) / 2,
+				(MAX_WIDTH - i32(text_size.x)) / 2,
+				(MAX_HEIGHT - i32(text_size.y)) / 2,
 				i32(FONT_SIZE),
 				rl.RAYWHITE,
 			)
 		} else {
-			rl.DrawTexture(texture, 0, 0, rl.WHITE)
+			if last_index < size {
+				for i in last_index ..< last_index + img.width {
+					rl.ImageDrawPixel(&img, i % img.width, i / img.width, pixels[i])
+				}
+				rl.UpdateTexture(texture, img.data)
+				rl.DrawTexture(texture, x, y, rl.WHITE)
+				last_index += img.width
+			} else {
+				rl.DrawTexture(texture, x, y, rl.WHITE)
+			}
 		}
 
-		// rl.UpdateTexture(texture, img.data)
-
-		// if last_index < size {
-		// 	for i in last_index ..< last_index + img.width {
-		// 		rl.ImageDrawPixel(&img, i % img.width, i / img.width, pixels[i])
-		// 	}
-		// 	rl.UpdateTexture(texture, img.data)
-		// 	rl.DrawTexture(texture, 0, 0, rl.WHITE)
-		// last_index += img.width
-		// }
 		rl.EndDrawing()
 	}
 
+	rl.UnloadTexture(texture)
+	rl.UnloadImage(img)
+	delete(pixels)
 	rl.CloseWindow()
 }
